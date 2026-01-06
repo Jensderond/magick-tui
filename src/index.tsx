@@ -1,3 +1,4 @@
+#!/usr/bin/env bun
 // ImageMagick TUI - Image compression and conversion tool
 
 // Declare build-time constant (injected during compilation)
