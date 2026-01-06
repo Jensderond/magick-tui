@@ -209,13 +209,17 @@ function getPlatformLibraryPath(): string {
       return '/usr/local/lib/libMagickWand-7.Q16HDRI.dylib'
     }
   } else if (platform === 'linux') {
-    // Linux paths - try multiple locations
+    // Linux paths - try multiple locations (ImageMagick 7 first, then 6)
     const linuxPaths = [
+      // ImageMagick 7
       '/usr/lib/x86_64-linux-gnu/libMagickWand-7.Q16HDRI.so',
+      '/usr/lib/x86_64-linux-gnu/libMagickWand-7.Q16HDRI.so.10',
       '/usr/lib/libMagickWand-7.Q16HDRI.so',
       '/usr/local/lib/libMagickWand-7.Q16HDRI.so',
-      // Also try the standard .so name with version
-      '/usr/lib/x86_64-linux-gnu/libMagickWand-7.Q16HDRI.so.10',
+      // ImageMagick 6 (Ubuntu default)
+      '/usr/lib/x86_64-linux-gnu/libMagickWand-6.Q16.so',
+      '/usr/lib/x86_64-linux-gnu/libMagickWand-6.Q16.so.6',
+      '/usr/lib/libMagickWand-6.Q16.so',
     ]
 
     for (const libPath of linuxPaths) {
@@ -232,7 +236,7 @@ function getPlatformLibraryPath(): string {
     }
 
     // If nothing found, return the most common path and let dlopen fail with a proper error
-    return '/usr/lib/x86_64-linux-gnu/libMagickWand-7.Q16HDRI.so'
+    return '/usr/lib/x86_64-linux-gnu/libMagickWand-6.Q16.so'
   }
 
   throw new Error(`Unsupported platform: ${platform}/${arch}`)

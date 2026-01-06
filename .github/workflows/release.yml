@@ -36,18 +36,25 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libmagickwand-dev imagemagick
+          # Install ImageMagick 7 from official static binary
+          sudo apt-get install -y libpng-dev libjpeg-dev libwebp-dev libgomp1 libfontconfig1
+          wget -q https://imagemagick.org/archive/binaries/magick
+          chmod +x magick
+          sudo mv magick /usr/local/bin/
+          # Verify installation
+          magick -version
 
       - name: Install dependencies
         run: bun install
 
-      # Run tests with FFI enabled (default)
+      # Run tests with FFI enabled (macOS only - has ImageMagick 7 with libs)
       - name: Run tests (FFI enabled)
+        if: matrix.os == 'macos-latest'
         run: bun test
         env:
           MAGICK_USE_FFI: 'true'
 
-      # Run tests with shell fallback
+      # Run tests with shell fallback (all platforms)
       - name: Run tests (Shell fallback)
         run: bun test
         env:
