@@ -1,0 +1,22 @@
+#!/usr/bin/env bun
+// Wrapper script to ensure proper JSX runtime loading
+
+import { spawnSync } from 'bun'
+import { join, dirname } from 'path'
+import { fileURLToPath } from 'url'
+
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = dirname(__filename)
+
+// Get the path to the actual entry point
+const entryPoint = join(__dirname, '..', 'src', 'index.tsx')
+
+// Run with the OpenTUI preload
+const result = spawnSync({
+  cmd: ['bun', '--preload', '@opentui/solid/preload', entryPoint, ...process.argv.slice(2)],
+  stdout: 'inherit',
+  stderr: 'inherit',
+  stdin: 'inherit',
+})
+
+process.exit(result.exitCode ?? 0)
