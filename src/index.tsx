@@ -9,15 +9,11 @@ import { TextAttributes } from '@opentui/core'
 import { createSignal, createEffect, onMount, Show } from 'solid-js'
 
 import type { ImageFile, OutputFormat, Section, StatusMessage } from './utils/types'
-import { scanDirectory, checkImageMagick, checkDiskSpace } from './utils/fileScanner'
+import { scanDirectory, loadDimensionsAsync, checkImageMagick, checkDiskSpace } from './utils/fileScanner'
 import { processImage, validateResize } from './utils/imageProcessor'
 import { COLORS, DEFAULT_QUALITY, OUTPUT_FORMATS, QUALITY_PRESETS } from './constants'
 
-import { FileList } from './components/FileList'
-import { FormatSelector } from './components/FormatSelector'
-import { QualitySelector } from './components/QualitySelector'
-import { ResizeInput } from './components/ResizeInput'
-import { StatusDisplay } from './components/StatusDisplay'
+import { FileList, FormatSelector, QualitySelector, ResizeInput, StatusDisplay } from './components'
 
 // Import version from package.json (fallback for dev mode)
 import pkg from '../package.json'
@@ -153,6 +149,8 @@ function App() {
     setProcessing(true)
     setStatus({ type: 'processing', message: `Converting ${image.name}...` })
 
+    const startTime = performance.now()
+
     try {
       const result = await processImage(
         {
@@ -166,15 +164,42 @@ function App() {
       )
 
       if (result.success) {
+        const duration = ((performance.now() - startTime) / 1000).toFixed(1)
         const outputNames = result.outputPaths?.map((p) => p.split('/').pop()).join(', ')
         setStatus({
           type: 'success',
-          message: `Created: ${outputNames}`,
+          message: `Created: ${outputNames} (${duration}s)`,
         })
 
         // Refresh file list to show new files
-        const newFiles = await scanDirectory(process.cwd())
-        setFiles(newFiles)
+        const currentFiles = files()
+        const currentPaths = new Set(currentFiles.map(f => f.path))
+        const scannedFiles = await scanDirectory(process.cwd())
+        
+        // Find only the newly created files
+        const newlyCreated = scannedFiles.filter(f => !currentPaths.has(f.path))
+        
+        // Merge: keep existing files (with dimensions), add new ones
+        const mergedFiles = scannedFiles.map(f => {
+          const existing = currentFiles.find(ef => ef.path === f.path)
+          return existing || f
+        })
+        setFiles(mergedFiles)
+        
+        // Only load dimensions for newly created files
+        if (newlyCreated.length > 0) {
+          loadDimensionsAsync(newlyCreated, (index, dimensions) => {
+            const newFile = newlyCreated[index]
+            if (!newFile) return
+            setFiles((prev) => {
+              const fileIndex = prev.findIndex(f => f.path === newFile.path)
+              if (fileIndex === -1) return prev
+              const updated = [...prev]
+              updated[fileIndex] = { ...updated[fileIndex]!, width: dimensions.width, height: dimensions.height }
+              return updated
+            })
+          })
+        }
       } else {
         setStatus({
           type: 'error',
@@ -213,9 +238,15 @@ function App() {
 
       if (section === 'files') {
         if (key.name === 'up' || key.name === 'k') {
-          setSelectedIndex((prev) => Math.max(0, prev - 1))
+          const current = selectedIndex()
+          if (current > 0) {
+            setSelectedIndex(current - 1)
+          }
         } else if (key.name === 'down' || key.name === 'j') {
-          setSelectedIndex((prev) => Math.min(files().length - 1, prev + 1))
+          const current = selectedIndex()
+          if (current < files().length - 1) {
+            setSelectedIndex(current + 1)
+          }
         }
       }
 
@@ -275,10 +306,13 @@ function App() {
       return
     }
 
-    // Scan for images
+    // Scan for images (fast - no dimensions yet)
     try {
+      const startTime = performance.now()
       const imageFiles = await scanDirectory(process.cwd())
+      const scanTime = performance.now() - startTime
       setFiles(imageFiles)
+      setLoading(false)
 
       if (imageFiles.length === 0) {
         setStatus({
@@ -286,16 +320,32 @@ function App() {
           message: 'No images found in current directory',
         })
       } else {
+        const timeStr = scanTime < 1000 
+          ? `${Math.round(scanTime)} ms` 
+          : `${(scanTime / 1000).toFixed(2)} s`
         setStatus({
           type: 'idle',
-          message: `Found ${imageFiles.length} image${imageFiles.length !== 1 ? 's' : ''}`,
+          message: `Found ${imageFiles.length} image${imageFiles.length !== 1 ? 's' : ''} in ${timeStr}`,
         })
+
+        // Load dimensions in background (after UI renders)
+        setTimeout(() => {
+          loadDimensionsAsync(imageFiles, (index, dimensions) => {
+            setFiles((prev) => {
+              const updated = [...prev]
+              const file = updated[index]
+              if (file) {
+                updated[index] = { ...file, width: dimensions.width, height: dimensions.height }
+              }
+              return updated
+            })
+          })
+        }, 0)
       }
     } catch (error) {
       setScanError(
         error instanceof Error ? error.message : 'Failed to scan directory'
       )
-    } finally {
       setLoading(false)
     }
   })

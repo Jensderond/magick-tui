@@ -44,3 +44,10 @@ export interface ImageDimensions {
 }
 
 export type Section = 'files' | 'formats' | 'quality' | 'resize' | 'convert'
+
+// Re-export FFI types for convenience
+export type {
+  ConvertOptions,
+  ConvertResult,
+  MagickFFIConfig,
+} from './magickFFI'

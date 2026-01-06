@@ -15,8 +15,8 @@ interface FileListProps {
 }
 
 export function FileList(props: FileListProps) {
-  const visibleFiles = createMemo(() => {
-    // Show a window of files around the selected one
+  // Track scroll state for indicators
+  const scrollState = createMemo(() => {
     const windowSize = 8
     const halfWindow = Math.floor(windowSize / 2)
 
@@ -28,6 +28,16 @@ export function FileList(props: FileListProps) {
       start = Math.max(0, end - windowSize)
     }
 
+    return {
+      start,
+      end,
+      hasItemsAbove: start > 0,
+      hasItemsBelow: end < props.files.length,
+    }
+  })
+
+  const visibleFiles = createMemo(() => {
+    const { start, end } = scrollState()
     return props.files.slice(start, end).map((file, idx) => ({
       file,
       actualIndex: start + idx,
@@ -42,7 +52,7 @@ export function FileList(props: FileListProps) {
       borderColor={props.focused ? COLORS.focused : COLORS.border}
       padding={1}
       title="Select Image"
-      style={{ height: 12 }}
+      style={{ height: 14 }}
     >
       <Show when={props.loading}>
         <text fg={COLORS.muted}>Scanning for images...</text>

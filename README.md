@@ -115,12 +115,79 @@ input.jpg
 - **Resizing**: Always downscale images; upscaling is not permitted
 - **Batch Processing**: Process images one at a time for better control
 
+## FFI Mode (Performance)
+
+MagickTUI uses Bun's FFI (Foreign Function Interface) to directly interface with `libMagickWand` for improved performance. This provides **1.5-4x faster** operations compared to shell execution.
+
+### How It Works
+
+- **FFI Mode (Default)**: Directly calls ImageMagick's C library for faster image processing
+- **Shell Fallback**: Automatically falls back to the `magick` CLI if FFI fails to load
+
+### Requirements for FFI Mode
+
+- **ImageMagick 7.x** with `libMagickWand` library installed
+- **Supported Platforms:**
+  - macOS ARM64 (Apple Silicon)
+  - Linux x86-64
+
+### Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MAGICK_USE_FFI` | `true` | Enable FFI mode (set to `false` for shell-only) |
+| `MAGICK_WAND_LIBRARY_PATH` | (auto-detect) | Override the library path |
+
+### Usage Examples
+
+```bash
+# Use FFI (default)
+bun run src/index.tsx
+
+# Force shell mode
+MAGICK_USE_FFI=false bun run src/index.tsx
+
+# Custom library path
+MAGICK_WAND_LIBRARY_PATH=/custom/path/libMagickWand.so bun run src/index.tsx
+```
+
+### Performance
+
+Based on benchmarks, FFI mode provides:
+- **Dimension reading**: ~2-4x faster
+- **Image conversion**: ~1.5-2x faster
+
+Run benchmarks yourself:
+```bash
+bun test src/utils/__tests__/performance.bench.ts
+```
+
 ## Troubleshooting
 
 ### ImageMagick Not Found
 Ensure ImageMagick is properly installed and in your system PATH. Try:
 ```bash
 which magick  # Check if ImageMagick is installed
+```
+
+### FFI Library Not Found
+If you see FFI-related errors, the `libMagickWand` library may not be in the expected location:
+```bash
+# macOS (Homebrew)
+ls /opt/homebrew/lib/libMagickWand-7.Q16HDRI.dylib
+
+# Linux
+ls /usr/lib/x86_64-linux-gnu/libMagickWand-7.Q16HDRI.so
+```
+
+You can set a custom path:
+```bash
+export MAGICK_WAND_LIBRARY_PATH=/path/to/libMagickWand.dylib
+```
+
+Or disable FFI mode to use shell execution:
+```bash
+export MAGICK_USE_FFI=false
 ```
 
 ### Permission Denied

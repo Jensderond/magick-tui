@@ -2,6 +2,21 @@
 
 import type { ProcessOptions, ProcessResult, OutputFormat } from './types'
 import { generateOutputPath, getImageDimensions } from './fileScanner'
+import { getMagickFFI, isFFIAvailable } from './magickFFI'
+
+// Debug logging
+const DEBUG = Bun.env.DEBUG?.includes('magick') ?? false
+
+function debugLog(message: string, ...args: unknown[]): void {
+  if (DEBUG) {
+    console.log(`[ImageProcessor] ${message}`, ...args)
+  }
+}
+
+// Feature flag: default to true (FFI enabled), can be disabled with MAGICK_USE_FFI=false
+function useFFI(): boolean {
+  return Bun.env.MAGICK_USE_FFI !== 'false'
+}
 
 interface ValidationResult {
   valid: boolean
@@ -80,9 +95,9 @@ function buildMagickArgs(
 }
 
 /**
- * Convert a single image to a specific format
+ * Convert a single image to a specific format using shell (original implementation)
  */
-async function convertToFormat(
+async function convertToFormatShell(
   inputPath: string,
   format: OutputFormat,
   quality: number,
@@ -115,6 +130,70 @@ async function convertToFormat(
       error: error instanceof Error ? error.message : 'Unknown error occurred',
     }
   }
+}
+
+/**
+ * Convert a single image to a specific format using FFI
+ */
+function convertToFormatFFI(
+  inputPath: string,
+  format: OutputFormat,
+  quality: number,
+  resizeWidth: number | null,
+  resizeHeight: number | null
+): { success: boolean; outputPath?: string; error?: string } {
+  const outputPath = generateOutputPath(inputPath, format)
+  const magick = getMagickFFI()
+
+  return magick.convertImage({
+    inputPath,
+    format,
+    quality,
+    resizeWidth,
+    resizeHeight,
+    outputPath,
+  })
+}
+
+/**
+ * Convert a single image to a specific format
+ * Uses FFI by default, falls back to shell on failure
+ */
+async function convertToFormat(
+  inputPath: string,
+  format: OutputFormat,
+  quality: number,
+  resizeWidth: number | null,
+  resizeHeight: number | null
+): Promise<{ success: boolean; outputPath?: string; error?: string }> {
+  const shouldUseFFI = useFFI()
+
+  if (shouldUseFFI) {
+    try {
+      // Check if FFI is available before attempting
+      if (isFFIAvailable()) {
+        debugLog('Using FFI for conversion')
+        const result = convertToFormatFFI(inputPath, format, quality, resizeWidth, resizeHeight)
+        
+        // If FFI succeeded, return result
+        if (result.success) {
+          return result
+        }
+        
+        // If FFI failed with an error, log and fall back to shell
+        debugLog('FFI conversion failed:', result.error)
+        console.warn('[MagickFFI] Conversion failed, falling back to shell:', result.error)
+      }
+    } catch (error) {
+      // FFI threw an exception, fall back to shell
+      const message = error instanceof Error ? error.message : String(error)
+      debugLog('FFI exception, falling back to shell:', message)
+      console.warn('[MagickFFI] Exception occurred, falling back to shell:', message)
+    }
+  }
+
+  debugLog('Using shell for conversion')
+  return convertToFormatShell(inputPath, format, quality, resizeWidth, resizeHeight)
 }
 
 /**
