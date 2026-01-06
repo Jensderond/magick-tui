@@ -1,15 +1,40 @@
 {
-  "name": "magick-tui",
+  "name": "@jsdr/magick-tui",
+  "version": "1.0.0",
+  "description": "A powerful, interactive Terminal User Interface for image compression and conversion using ImageMagick",
   "module": "src/index.tsx",
   "type": "module",
-  "private": true,
   "bin": {
     "magick-tui": "./src/index.tsx"
   },
   "scripts": {
     "dev": "bun run --watch src/index.tsx",
-    "start": "bun run src/index.tsx"
+    "start": "bun run src/index.tsx",
+    "build": "bun run scripts/build.ts",
+    "build:local": "bun run scripts/build-local.ts",
+    "test": "bun test",
+    "prepublishOnly": "bun run build"
   },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jensderond/magick-tui.git"
+  },
+  "keywords": [
+    "imagemagick",
+    "tui",
+    "cli",
+    "image-compression",
+    "webp",
+    "avif",
+    "image-conversion",
+    "terminal-ui"
+  ],
+  "author": "Jens de Rond",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/jensderond/magick-tui/issues"
+  },
+  "homepage": "https://github.com/jensderond/magick-tui#readme",
   "devDependencies": {
     "@types/bun": "latest"
   },

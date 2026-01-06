@@ -1,5 +1,8 @@
 // ImageMagick TUI - Image compression and conversion tool
 
+// Declare build-time constant (injected during compilation)
+declare const MAGICK_TUI_VERSION: string | undefined
+
 import { render, useKeyboard, useRenderer } from '@opentui/solid'
 import { TextAttributes } from '@opentui/core'
 import { createSignal, createEffect, onMount, Show } from 'solid-js'
@@ -14,6 +17,43 @@ import { FormatSelector } from './components/FormatSelector'
 import { QualitySelector } from './components/QualitySelector'
 import { ResizeInput } from './components/ResizeInput'
 import { StatusDisplay } from './components/StatusDisplay'
+
+// Import version from package.json (fallback for dev mode)
+import pkg from '../package.json'
+
+// Use build-time constant if available (in compiled binaries), otherwise use package.json
+const VERSION = typeof MAGICK_TUI_VERSION !== 'undefined' ? MAGICK_TUI_VERSION : pkg.version
+
+// Handle CLI arguments before launching TUI
+const args = process.argv.slice(2)
+
+if (args.includes('--version') || args.includes('-v')) {
+  console.log(`magick-tui v${VERSION}`)
+  process.exit(0)
+}
+
+if (args.includes('--help') || args.includes('-h')) {
+  console.log(`
+magick-tui v${VERSION}
+A powerful, interactive Terminal User Interface for image compression and conversion using ImageMagick.
+
+Usage:
+  magick-tui [options]
+
+Options:
+  -v, --version    Show version number
+  -h, --help       Show this help message
+
+The interface is intuitive and keyboard-driven:
+  - Navigate with Tab or arrow keys
+  - Select formats and quality presets
+  - Convert images to WebP and AVIF formats
+  - Optionally resize images during conversion
+
+For more information, visit: https://github.com/jensderond/magick-tui
+`)
+  process.exit(0)
+}
 
 function App() {
   // Get renderer for proper cleanup

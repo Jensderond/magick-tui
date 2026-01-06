@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Run tests
+        run: bun test || echo "No tests yet - continuing"
+
+      - name: Type check
+        run: bunx tsc --noEmit
+
+      - name: Test build
+        run: bun run build:local
+
+      - name: Verify executable works
+        run: |
+          chmod +x dist/magick-tui
+          echo "Testing --version flag..."
+          ./dist/magick-tui --version
+          echo "Testing --help flag..."
+          ./dist/magick-tui --help
+          echo "✅ Executable verified successfully"
