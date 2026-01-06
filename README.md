@@ -21,21 +21,27 @@ A powerful, interactive Terminal User Interface (TUI) for image compression and 
 
 ## Installation
 
-### Option 1: Download Pre-built Binary (Recommended)
+### Option 1: Install via npm/bun (Recommended)
+
+```bash
+# Global install
+npm install -g @jsdr/magick-tui
+# or
+bun install -g @jsdr/magick-tui
+
+# Run once without installing
+npx @jsdr/magick-tui
+# or
+bunx @jsdr/magick-tui
+```
+
+### Option 2: Download Pre-built Binary
 
 Download the latest release for your platform and add it to your PATH:
 
 #### macOS (Apple Silicon)
 ```bash
 curl -L https://github.com/jensderond/magick-tui/releases/latest/download/magick-tui-darwin-arm64 -o magick-tui
-chmod +x magick-tui
-mkdir -p ~/.local/bin
-mv magick-tui ~/.local/bin/
-```
-
-#### macOS (Intel)
-```bash
-curl -L https://github.com/jensderond/magick-tui/releases/latest/download/magick-tui-darwin-x64 -o magick-tui
 chmod +x magick-tui
 mkdir -p ~/.local/bin
 mv magick-tui ~/.local/bin/
@@ -49,37 +55,9 @@ mkdir -p ~/.local/bin
 mv magick-tui ~/.local/bin/
 ```
 
-#### Linux (ARM64)
-```bash
-curl -L https://github.com/jensderond/magick-tui/releases/latest/download/magick-tui-linux-arm64 -o magick-tui
-chmod +x magick-tui
-mkdir -p ~/.local/bin
-mv magick-tui ~/.local/bin/
-```
-
-#### Windows (PowerShell)
-```powershell
-Invoke-WebRequest -Uri "https://github.com/jensderond/magick-tui/releases/latest/download/magick-tui-windows-x64.exe" -OutFile "magick-tui.exe"
-# Move to a directory in your PATH, e.g., C:\Program Files\magick-tui\
-```
-
 **Note:** Make sure `~/.local/bin` is in your PATH. Add this to your `~/.bashrc` or `~/.zshrc`:
 ```bash
 export PATH="$HOME/.local/bin:$PATH"
-```
-
-### Option 2: Install via npm/bun
-
-```bash
-# Global install
-npm install -g @jsdr/magick-tui
-# or
-bun install -g @jsdr/magick-tui
-
-# Run once without installing
-npx @jsdr/magick-tui
-# or
-bunx @jsdr/magick-tui
 ```
 
 ### Option 3: Install from Source (Development)

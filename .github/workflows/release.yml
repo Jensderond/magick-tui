@@ -46,9 +46,6 @@ jobs:
           - os: ubuntu-latest
             target: bun-linux-x64
             artifact: magick-tui-linux-x64
-          - os: ubuntu-latest
-            target: bun-linux-arm64
-            artifact: magick-tui-linux-arm64
 
     steps:
       - name: Checkout code
@@ -97,10 +94,7 @@ jobs:
         with:
           files: |
             dist/magick-tui-darwin-arm64
-            dist/magick-tui-darwin-x64
             dist/magick-tui-linux-x64
-            dist/magick-tui-linux-arm64
-            dist/magick-tui-windows-x64.exe
             dist/SHA256SUMS.txt
           generate_release_notes: true
           draft: false
