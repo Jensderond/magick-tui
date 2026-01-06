@@ -21,17 +21,15 @@ A powerful, interactive Terminal User Interface (TUI) for image compression and 
 
 ## Installation
 
-### Option 1: Install via npm/bun (Recommended)
+### Option 1: Install via Bun (Recommended)
+
+**Note:** Requires [Bun](https://bun.sh/) to be installed.
 
 ```bash
 # Global install
-npm install -g @jsdr/magick-tui
-# or
 bun install -g @jsdr/magick-tui
 
 # Run once without installing
-npx @jsdr/magick-tui
-# or
 bunx @jsdr/magick-tui
 ```
 
