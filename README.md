@@ -120,7 +120,7 @@ input.jpg
 ### ImageMagick Not Found
 Ensure ImageMagick is properly installed and in your system PATH. Try:
 ```bash
-which convert  # Check if ImageMagick is installed
+which magick  # Check if ImageMagick is installed
 ```
 
 ### Permission Denied
