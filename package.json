@@ -12,8 +12,7 @@
     "start": "bun run src/index.tsx",
     "build": "bun run scripts/build.ts",
     "build:local": "bun run scripts/build-local.ts",
-    "test": "bun test",
-    "prepublishOnly": "bun run build"
+    "test": "bun test"
   },
   "repository": {
     "type": "git",
