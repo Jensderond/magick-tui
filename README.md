@@ -41,7 +41,7 @@ Download the latest release for your platform and add it to your PATH:
 
 #### macOS (Apple Silicon)
 ```bash
-curl -L https://github.com/jensderond/magick-tui/releases/latest/download/magick-tui-darwin-arm64 -o magick-tui
+curl -L https://github.com/Jensderond/magick-tui/releases/latest/download/magick-tui-darwin-arm64 -o magick-tui
 chmod +x magick-tui
 mkdir -p ~/.local/bin
 mv magick-tui ~/.local/bin/
@@ -49,7 +49,7 @@ mv magick-tui ~/.local/bin/
 
 #### Linux (x64)
 ```bash
-curl -L https://github.com/jensderond/magick-tui/releases/latest/download/magick-tui-linux-x64 -o magick-tui
+curl -L https://github.com/Jensderond/magick-tui/releases/latest/download/magick-tui-linux-x64 -o magick-tui
 chmod +x magick-tui
 mkdir -p ~/.local/bin
 mv magick-tui ~/.local/bin/
@@ -63,7 +63,7 @@ export PATH="$HOME/.local/bin:$PATH"
 ### Option 3: Install from Source (Development)
 
 ```bash
-git clone https://github.com/jensderond/magick-tui.git
+git clone https://github.com/Jensderond/magick-tui.git
 cd magick-tui
 bun install
 ```

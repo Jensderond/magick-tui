@@ -16,7 +16,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/jensderond/magick-tui.git"
+    "url": "git+https://github.com/jensderond/magick-tui.git"
   },
   "keywords": [
     "imagemagick",
@@ -31,9 +31,9 @@
   "author": "Jens de Rond",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/jensderond/magick-tui/issues"
+    "url": "https://github.com/Jensderond/magick-tui/issues"
   },
-  "homepage": "https://github.com/jensderond/magick-tui#readme",
+  "homepage": "https://github.com/Jensderond/magick-tui#readme",
   "devDependencies": {
     "@types/bun": "latest"
   },
