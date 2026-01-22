@@ -1,6 +1,6 @@
 {
   "name": "@jsdr/magick-tui",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "A powerful, interactive Terminal User Interface for image compression and conversion using ImageMagick",
   "module": "src/index.tsx",
   "type": "module",
