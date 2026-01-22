@@ -85,6 +85,26 @@ export interface ConvertOptions {
 }
 
 /**
+ * Options for file size estimation (no output path needed)
+ */
+export interface EstimateOptions {
+  inputPath: string
+  format: OutputFormat
+  quality: number
+  resizeWidth?: number | null
+  resizeHeight?: number | null
+}
+
+/**
+ * Result of a file size estimation
+ */
+export interface EstimateResult {
+  success: boolean
+  estimatedSize?: number // Size in bytes
+  error?: string
+}
+
+/**
  * Result of an image conversion operation
  */
 export interface ConvertResult {
@@ -170,6 +190,12 @@ const MAGICK_SYMBOLS = {
   MagickSetImageFormat: {
     args: [FFIType.ptr, FFIType.ptr] as const,
     returns: FFIType.bool,
+  },
+
+  // Blob operations (for in-memory conversion)
+  MagickGetImageBlob: {
+    args: [FFIType.ptr, FFIType.ptr] as const, // (wand, &length) -> blob ptr
+    returns: FFIType.ptr,
   },
 
   // Error handling
@@ -531,6 +557,110 @@ export class MagickFFI {
       return {
         success: true,
         outputPath,
+      }
+    } finally {
+      this.destroyWand(wand)
+    }
+  }
+
+  /**
+   * Estimate the output file size without writing to disk
+   * Uses MagickGetImageBlob to get the compressed data in memory
+   */
+  estimateFileSize(options: EstimateOptions): EstimateResult {
+    if (!this.lib) {
+      throw new Error('MagickFFI not initialized')
+    }
+
+    const { inputPath, format, quality, resizeWidth, resizeHeight } = options
+
+    debugLog('Estimating file size:', {
+      inputPath,
+      format,
+      quality,
+      resizeWidth,
+      resizeHeight,
+    })
+
+    const wand = this.createWand()
+    try {
+      const inputCStr = toCString(inputPath)
+
+      // Read input image
+      const readResult = this.lib.symbols.MagickReadImage(wand, inputCStr)
+      if (!readResult) {
+        const error = this.getException(wand)
+        return {
+          success: false,
+          error: error ?? 'Failed to read input image',
+        }
+      }
+
+      // Auto-orient based on EXIF data
+      this.lib.symbols.MagickAutoOrientImage(wand)
+
+      // Strip metadata
+      this.lib.symbols.MagickStripImage(wand)
+
+      // Set quality
+      this.lib.symbols.MagickSetImageCompressionQuality(wand, quality)
+
+      // Resize if specified
+      if (resizeWidth || resizeHeight) {
+        const currentWidth = Number(this.lib.symbols.MagickGetImageWidth(wand))
+        const currentHeight = Number(this.lib.symbols.MagickGetImageHeight(wand))
+
+        let targetWidth = resizeWidth ?? 0
+        let targetHeight = resizeHeight ?? 0
+
+        if (targetWidth && !targetHeight) {
+          targetHeight = Math.round((currentHeight * targetWidth) / currentWidth)
+        } else if (targetHeight && !targetWidth) {
+          targetWidth = Math.round((currentWidth * targetHeight) / currentHeight)
+        }
+
+        if (targetWidth <= currentWidth && targetHeight <= currentHeight) {
+          this.lib.symbols.MagickResizeImage(
+            wand,
+            targetWidth,
+            targetHeight,
+            FilterType.LanczosFilter
+          )
+        }
+      }
+
+      // Set output format
+      const formatCStr = toCString(format.toUpperCase())
+      const formatResult = this.lib.symbols.MagickSetImageFormat(wand, formatCStr)
+      if (!formatResult) {
+        const error = this.getException(wand)
+        return {
+          success: false,
+          error: error ?? `Failed to set format to ${format}`,
+        }
+      }
+
+      // Get the image as a blob (in memory, no disk write)
+      const lengthBuffer = new BigUint64Array(1)
+      const blobPtr = this.lib.symbols.MagickGetImageBlob(wand, lengthBuffer)
+
+      if (!blobPtr) {
+        const error = this.getException(wand)
+        return {
+          success: false,
+          error: error ?? 'Failed to get image blob',
+        }
+      }
+
+      const estimatedSize = Number(lengthBuffer[0])
+      debugLog('Estimated size:', estimatedSize, 'bytes')
+
+      // Free the blob memory
+      this.lib.symbols.MagickRelinquishMemory(blobPtr)
+
+      return {
+        success: true,
+        estimatedSize,
       }
     } finally {
       this.destroyWand(wand)

@@ -10,10 +10,10 @@ import { createSignal, createEffect, onMount, Show } from 'solid-js'
 
 import type { ImageFile, OutputFormat, Section, StatusMessage } from './utils/types'
 import { scanDirectory, loadDimensionsAsync, checkImageMagick, checkDiskSpace } from './utils/fileScanner'
-import { processImage, validateResize } from './utils/imageProcessor'
+import { processImage, validateResize, estimateFileSizeForFormats, type FileSizeEstimate } from './utils/imageProcessor'
 import { COLORS, DEFAULT_QUALITY, OUTPUT_FORMATS, QUALITY_PRESETS } from './constants'
 
-import { FileList, FormatSelector, QualitySelector, ResizeInput, StatusDisplay } from './components'
+import { FileList, FormatSelector, QualitySelector, ResizeInput, SizeEstimate, StatusDisplay } from './components'
 
 // Import version from package.json (fallback for dev mode)
 import pkg from '../package.json'
@@ -85,6 +85,10 @@ function App() {
     message: 'Ready',
   })
   const [processing, setProcessing] = createSignal(false)
+
+  // Size estimation state
+  const [sizeEstimates, setSizeEstimates] = createSignal<FileSizeEstimate[] | null>(null)
+  const [estimating, setEstimating] = createSignal(false)
 
   // Current selected image
   const selectedImage = () => files()[selectedIndex()] || null
@@ -357,6 +361,53 @@ function App() {
     if (idx >= 0) setQualityFocusIndex(idx)
   })
 
+  // Estimate file size when relevant parameters change
+  createEffect(() => {
+    const image = selectedImage()
+    const formats = Array.from(selectedFormats())
+    const q = quality()
+    const width = resizeWidth() ? parseInt(resizeWidth(), 10) : null
+    const height = resizeHeight() ? parseInt(resizeHeight(), 10) : null
+
+    // Clear estimates if no image selected or no formats
+    if (!image || formats.length === 0) {
+      setSizeEstimates(null)
+      return
+    }
+
+    // Don't estimate while processing
+    if (processing()) {
+      return
+    }
+
+    // Debounce the estimation to avoid too many calls
+    const timeoutId = setTimeout(async () => {
+      setEstimating(true)
+      try {
+        const result = await estimateFileSizeForFormats(
+          image.path,
+          image.size,
+          formats,
+          q,
+          width,
+          height
+        )
+        if (result.success && result.estimates) {
+          setSizeEstimates(result.estimates)
+        } else {
+          setSizeEstimates(null)
+        }
+      } catch (error) {
+        setSizeEstimates(null)
+      } finally {
+        setEstimating(false)
+      }
+    }, 300) // 300ms debounce
+
+    // Cleanup on re-run
+    return () => clearTimeout(timeoutId)
+  })
+
   return (
     <box flexDirection="column" flexGrow={1} padding={1}>
       {/* Header */}
@@ -413,6 +464,15 @@ function App() {
           focusedField={resizeFocusField()}
           onFocusedFieldChange={setResizeFocusField}
         />
+
+        {/* Size estimate */}
+        <Show when={selectedImage()}>
+          <SizeEstimate
+            estimates={sizeEstimates()}
+            loading={estimating()}
+            originalSize={selectedImage()?.size || 0}
+          />
+        </Show>
 
         {/* Convert button */}
         <box

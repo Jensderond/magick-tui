@@ -50,4 +50,6 @@ export type {
   ConvertOptions,
   ConvertResult,
   MagickFFIConfig,
+  EstimateOptions,
+  EstimateResult,
 } from './magickFFI'
