@@ -36,6 +36,7 @@ export const OUTPUT_FORMATS: { format: OutputFormat; label: string }[] = [
 export const COLORS = {
   primary: '#3B82F6', // Blue
   success: '#22C55E', // Green
+  successLight: '#4ADE80', // Light green (for moderate compression)
   error: '#EF4444', // Red
   warning: '#F59E0B', // Yellow/Amber
   muted: '#6B7280', // Gray
@@ -45,6 +46,9 @@ export const COLORS = {
   focused: '#60A5FA', // Light blue for focused elements
   selected: '#2563EB', // Darker blue for selected items
 }
+
+// Size estimation debounce delay in milliseconds
+export const SIZE_ESTIMATE_DEBOUNCE_MS = 300
 
 // Format file size for display
 export function formatFileSize(bytes: number): string {

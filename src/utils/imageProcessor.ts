@@ -1,5 +1,6 @@
 // ImageMagick processing utilities
 
+import { unlink } from 'node:fs/promises'
 import type { ProcessOptions, ProcessResult, OutputFormat } from './types'
 import { generateOutputPath, getImageDimensions } from './fileScanner'
 import { getMagickFFI, isFFIAvailable } from './magickFFI'
@@ -297,7 +298,7 @@ async function estimateFileSizeShell(
   resizeWidth: number | null,
   resizeHeight: number | null
 ): Promise<{ success: boolean; estimatedSize?: number; error?: string }> {
-  const tempPath = `/tmp/magick-estimate-${Date.now()}.${format}`
+  const tempPath = `/tmp/magick-estimate-${crypto.randomUUID()}.${format}`
   const args = buildMagickArgs(inputPath, tempPath, quality, resizeWidth, resizeHeight)
 
   try {
@@ -322,9 +323,7 @@ async function estimateFileSizeShell(
 
     // Delete the temp file
     try {
-      await Bun.write(tempPath, '') // Clear content first
-      const fs = await import('node:fs/promises')
-      await fs.unlink(tempPath)
+      await unlink(tempPath)
     } catch {
       // Ignore cleanup errors
     }
