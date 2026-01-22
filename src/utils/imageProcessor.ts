@@ -1,9 +1,9 @@
 // ImageMagick processing utilities
 
-import { unlink } from 'node:fs/promises'
 import type { ProcessOptions, ProcessResult, OutputFormat } from './types'
 import { generateOutputPath, getImageDimensions } from './fileScanner'
 import { getMagickFFI, isFFIAvailable } from './magickFFI'
+import { buildMagickArgs } from './magickShared'
 
 /**
  * Result of file size estimation for multiple formats
@@ -103,8 +103,7 @@ export function cancelEstimation(id: number): void {
   }
 }
 
-// Feature flag: default to true (FFI enabled), can be disabled with MAGICK_USE_FFI=false
-function useFFI(): boolean {
+function shouldUseFFI(): boolean {
   return Bun.env.MAGICK_USE_FFI !== 'false'
 }
 
@@ -151,41 +150,7 @@ export async function validateResize(
 }
 
 /**
- * Build the ImageMagick command arguments
- */
-function buildMagickArgs(
-  inputPath: string,
-  outputPath: string,
-  quality: number,
-  resizeWidth: number | null,
-  resizeHeight: number | null
-): string[] {
-  const args: string[] = [inputPath]
-
-  // Auto-orient based on EXIF data (preserves orientation)
-  args.push('-auto-orient')
-
-  // Strip metadata for smaller file size
-  args.push('-strip')
-
-  // Set quality
-  args.push('-quality', quality.toString())
-
-  // Add resize if specified (with > flag to only shrink, never enlarge)
-  if (resizeWidth !== null || resizeHeight !== null) {
-    const widthStr = resizeWidth !== null ? resizeWidth.toString() : ''
-    const heightStr = resizeHeight !== null ? resizeHeight.toString() : ''
-    // The > flag ensures we only shrink, never enlarge
-    args.push('-resize', `${widthStr}x${heightStr}>`)
-  }
-
-  args.push(outputPath)
-
-  return args
-}
-
-/**
- * Convert a single image to a specific format using shell (original implementation)
+ * Convert a single image to a specific format using shell
  */
 async function convertToFormatShell(
   inputPath: string,
@@ -256,26 +221,19 @@ async function convertToFormat(
   resizeWidth: number | null,
   resizeHeight: number | null
 ): Promise<{ success: boolean; outputPath?: string; error?: string }> {
-  const shouldUseFFI = useFFI()
-
-  if (shouldUseFFI) {
+  // Try FFI first if enabled and available
+  if (shouldUseFFI() && isFFIAvailable()) {
     try {
-      // Check if FFI is available before attempting
-      if (isFFIAvailable()) {
-        debugLog('Using FFI for conversion')
-        const result = convertToFormatFFI(inputPath, format, quality, resizeWidth, resizeHeight)
-        
-        // If FFI succeeded, return result
-        if (result.success) {
-          return result
-        }
-        
-        // If FFI failed with an error, log and fall back to shell
-        debugLog('FFI conversion failed:', result.error)
-        console.warn('[MagickFFI] Conversion failed, falling back to shell:', result.error)
+      debugLog('Using FFI for conversion')
+      const result = convertToFormatFFI(inputPath, format, quality, resizeWidth, resizeHeight)
+
+      if (result.success) {
+        return result
       }
+
+      debugLog('FFI conversion failed:', result.error)
+      console.warn('[MagickFFI] Conversion failed, falling back to shell:', result.error)
     } catch (error) {
-      // FFI threw an exception, fall back to shell
       const message = error instanceof Error ? error.message : String(error)
       debugLog('FFI exception, falling back to shell:', message)
       console.warn('[MagickFFI] Exception occurred, falling back to shell:', message)
@@ -358,123 +316,4 @@ export function describeProcessing(options: ProcessOptions): string {
   parts.push(`Formats: ${options.outputFormats.map((f) => f.toUpperCase()).join(', ')}`)
 
   return parts.join(' | ')
-}
-
-/**
- * Estimate file size using shell (with temp file)
- * Used as fallback when FFI is not available
- */
-async function estimateFileSizeShell(
-  inputPath: string,
-  format: OutputFormat,
-  quality: number,
-  resizeWidth: number | null,
-  resizeHeight: number | null
-): Promise<{ success: boolean; estimatedSize?: number; error?: string }> {
-  const tempPath = `/tmp/magick-estimate-${crypto.randomUUID()}.${format}`
-  const args = buildMagickArgs(inputPath, tempPath, quality, resizeWidth, resizeHeight)
-
-  try {
-    const proc = Bun.spawn(['magick', ...args], {
-      stdout: 'pipe',
-      stderr: 'pipe',
-    })
-
-    const stderr = await new Response(proc.stderr).text()
-    await proc.exited
-
-    if (proc.exitCode !== 0) {
-      return {
-        success: false,
-        error: stderr.trim() || `ImageMagick exited with code ${proc.exitCode}`,
-      }
-    }
-
-    // Get the size of the temp file
-    const tempFile = Bun.file(tempPath)
-    const estimatedSize = tempFile.size
-
-    // Delete the temp file
-    try {
-      await unlink(tempPath)
-    } catch {
-      // Ignore cleanup errors
-    }
-
-    return { success: true, estimatedSize }
-  } catch (error) {
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : 'Unknown error occurred',
-    }
-  }
-}
-
-/**
- * Estimate the output file sizes for given formats without saving files
- * Uses FFI for in-memory conversion when available, falls back to temp files
- */
-export async function estimateFileSizeForFormats(
-  inputPath: string,
-  originalSize: number,
-  formats: OutputFormat[],
-  quality: number,
-  resizeWidth: number | null,
-  resizeHeight: number | null
-): Promise<EstimateFileSizeResult> {
-  const estimates: FileSizeEstimate[] = []
-  const shouldUseFFI = useFFI()
-
-  for (const format of formats) {
-    let estimatedSize: number | undefined
-
-    if (shouldUseFFI && isFFIAvailable()) {
-      try {
-        const magick = getMagickFFI()
-        const result = magick.estimateFileSize({
-          inputPath,
-          format,
-          quality,
-          resizeWidth,
-          resizeHeight,
-        })
-
-        if (result.success && result.estimatedSize !== undefined) {
-          estimatedSize = result.estimatedSize
-        }
-      } catch (error) {
-        debugLog('FFI estimation failed, falling back to shell:', error)
-      }
-    }
-
-    // Fallback to shell if FFI didn't work
-    if (estimatedSize === undefined) {
-      const shellResult = await estimateFileSizeShell(
-        inputPath,
-        format,
-        quality,
-        resizeWidth,
-        resizeHeight
-      )
-      if (shellResult.success && shellResult.estimatedSize !== undefined) {
-        estimatedSize = shellResult.estimatedSize
-      }
-    }
-
-    if (estimatedSize !== undefined) {
-      const decreasePercent = Math.round(((originalSize - estimatedSize) / originalSize) * 100)
-      estimates.push({
-        format,
-        estimatedSize,
-        originalSize,
-        decreasePercent,
-      })
-    }
-  }
-
-  if (estimates.length === 0) {
-    return { success: false, error: 'Could not estimate file sizes' }
-  }
-
-  return { success: true, estimates }
 }

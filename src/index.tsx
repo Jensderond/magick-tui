@@ -378,23 +378,19 @@ function App() {
       currentEstimationId = null
     }
 
-    // Clear estimates if no image selected or no formats
-    if (!image || formats.length === 0) {
-      setSizeEstimates(null)
-      setEstimating(false)
+    // Clear estimates if no image selected, no formats, or while processing
+    if (!image || formats.length === 0 || processing()) {
+      if (!processing()) {
+        setSizeEstimates(null)
+        setEstimating(false)
+      }
       return
     }
 
-    // Don't estimate while processing
-    if (processing()) {
-      return
-    }
-
-    // Debounce the estimation to avoid too many calls
+    // Debounce the estimation
     const timeoutId = setTimeout(() => {
       setEstimating(true)
 
-      // Start async estimation in worker (non-blocking)
       const { promise, id } = estimateFileSizeAsync(
         image.path,
         image.size,
@@ -405,31 +401,22 @@ function App() {
       )
       currentEstimationId = id
 
-      promise.then((result) => {
-        // Only update if this is still the current request
-        if (currentEstimationId === id) {
-          if (result.success && result.estimates) {
-            setSizeEstimates(result.estimates)
-          } else {
-            setSizeEstimates(null)
-          }
-          setEstimating(false)
-          currentEstimationId = null
-        }
-      }).catch((error) => {
-        // Log error for debugging (visible with DEBUG=magick)
-        if (Bun.env.DEBUG?.includes('magick')) {
-          console.log('[SizeEstimate] Estimation failed:', error)
-        }
-        if (currentEstimationId === id) {
+      promise
+        .then((result) => {
+          if (currentEstimationId !== id) return
+          setSizeEstimates(result.success ? result.estimates ?? null : null)
+        })
+        .catch(() => {
+          if (currentEstimationId !== id) return
           setSizeEstimates(null)
+        })
+        .finally(() => {
+          if (currentEstimationId !== id) return
           setEstimating(false)
           currentEstimationId = null
-        }
-      })
+        })
     }, SIZE_ESTIMATE_DEBOUNCE_MS)
 
-    // Cleanup on re-run
     return () => {
       clearTimeout(timeoutId)
       if (currentEstimationId !== null) {
