@@ -23,7 +23,7 @@ export function SizeEstimate(props: SizeEstimateProps) {
 
   const getPercentColor = (percent: number): string => {
     if (percent >= 50) return COLORS.success
-    if (percent >= 20) return '#4ADE80' // Light green
+    if (percent >= 20) return COLORS.successLight
     if (percent > 0) return COLORS.warning
     return COLORS.error
   }

@@ -387,6 +387,92 @@ export class MagickFFI {
   }
 
   /**
+   * Shared image preparation logic for conversion and estimation
+   * Handles: read, auto-orient, strip metadata, set quality, resize, set format
+   */
+  private prepareImageForOutput(
+    wand: Pointer,
+    inputPath: string,
+    format: OutputFormat,
+    quality: number,
+    resizeWidth: number | null | undefined,
+    resizeHeight: number | null | undefined
+  ): { success: true } | { success: false; error: string } {
+    if (!this.lib) {
+      return { success: false, error: 'MagickFFI not initialized' }
+    }
+
+    const inputCStr = toCString(inputPath)
+
+    // Read input image
+    const readResult = this.lib.symbols.MagickReadImage(wand, inputCStr)
+    if (!readResult) {
+      const error = this.getException(wand)
+      return { success: false, error: error ?? 'Failed to read input image' }
+    }
+
+    // Auto-orient based on EXIF data
+    const orientResult = this.lib.symbols.MagickAutoOrientImage(wand)
+    if (!orientResult) {
+      debugLog('Warning: Auto-orient failed')
+    }
+
+    // Strip metadata
+    const stripResult = this.lib.symbols.MagickStripImage(wand)
+    if (!stripResult) {
+      debugLog('Warning: Strip metadata failed')
+    }
+
+    // Set quality
+    const qualityResult = this.lib.symbols.MagickSetImageCompressionQuality(wand, quality)
+    if (!qualityResult) {
+      debugLog('Warning: Set quality failed')
+    }
+
+    // Resize if specified
+    if (resizeWidth || resizeHeight) {
+      const currentWidth = Number(this.lib.symbols.MagickGetImageWidth(wand))
+      const currentHeight = Number(this.lib.symbols.MagickGetImageHeight(wand))
+
+      let targetWidth = resizeWidth ?? 0
+      let targetHeight = resizeHeight ?? 0
+
+      if (targetWidth && !targetHeight) {
+        targetHeight = Math.round((currentHeight * targetWidth) / currentWidth)
+      } else if (targetHeight && !targetWidth) {
+        targetWidth = Math.round((currentWidth * targetHeight) / currentHeight)
+      }
+
+      // Only resize if we're shrinking (not enlarging)
+      if (targetWidth <= currentWidth && targetHeight <= currentHeight) {
+        debugLog(`Resizing to ${targetWidth}x${targetHeight}`)
+        const resizeResult = this.lib.symbols.MagickResizeImage(
+          wand,
+          targetWidth,
+          targetHeight,
+          FilterType.LanczosFilter
+        )
+        if (!resizeResult) {
+          const error = this.getException(wand)
+          return { success: false, error: error ?? 'Failed to resize image' }
+        }
+      } else {
+        debugLog('Skipping resize: target dimensions larger than current dimensions')
+      }
+    }
+
+    // Set output format
+    const formatCStr = toCString(format.toUpperCase())
+    const formatResult = this.lib.symbols.MagickSetImageFormat(wand, formatCStr)
+    if (!formatResult) {
+      const error = this.getException(wand)
+      return { success: false, error: error ?? `Failed to set format to ${format}` }
+    }
+
+    return { success: true }
+  }
+
+  /**
    * Get image dimensions from a file
    * Accounts for EXIF orientation to return displayed dimensions
    */
@@ -436,128 +522,30 @@ export class MagickFFI {
       throw new Error('MagickFFI not initialized')
     }
 
-    const { inputPath, format, quality, resizeWidth, resizeHeight, outputPath } =
-      options
+    const { inputPath, format, quality, resizeWidth, resizeHeight, outputPath } = options
 
-    debugLog('Converting image:', {
-      inputPath,
-      format,
-      quality,
-      resizeWidth,
-      resizeHeight,
-      outputPath,
-    })
+    debugLog('Converting image:', { inputPath, format, quality, resizeWidth, resizeHeight, outputPath })
 
     const wand = this.createWand()
     try {
-      const inputCStr = toCString(inputPath)
-
-      // Read input image - pass TypedArray directly
-      const readResult = this.lib.symbols.MagickReadImage(wand, inputCStr)
-      if (!readResult) {
-        const error = this.getException(wand)
-        return {
-          success: false,
-          error: error ?? 'Failed to read input image',
-        }
-      }
-
-      // Auto-orient based on EXIF data
-      const orientResult = this.lib.symbols.MagickAutoOrientImage(wand)
-      if (!orientResult) {
-        debugLog('Warning: Auto-orient failed')
-      }
-
-      // Strip metadata
-      const stripResult = this.lib.symbols.MagickStripImage(wand)
-      if (!stripResult) {
-        debugLog('Warning: Strip metadata failed')
-      }
-
-      // Set quality
-      const qualityResult = this.lib.symbols.MagickSetImageCompressionQuality(
-        wand,
-        quality
+      // Prepare image (read, orient, strip, quality, resize, format)
+      const prepResult = this.prepareImageForOutput(
+        wand, inputPath, format, quality, resizeWidth, resizeHeight
       )
-      if (!qualityResult) {
-        debugLog('Warning: Set quality failed')
+      if (!prepResult.success) {
+        return { success: false, error: prepResult.error }
       }
 
-      // Resize if specified
-      if (resizeWidth || resizeHeight) {
-        // Get current dimensions
-        const currentWidth = Number(this.lib.symbols.MagickGetImageWidth(wand))
-        const currentHeight = Number(this.lib.symbols.MagickGetImageHeight(wand))
-
-        // Calculate target dimensions maintaining aspect ratio
-        let targetWidth = resizeWidth ?? 0
-        let targetHeight = resizeHeight ?? 0
-
-        if (targetWidth && !targetHeight) {
-          // Width specified, calculate height maintaining aspect ratio
-          targetHeight = Math.round(
-            (currentHeight * targetWidth) / currentWidth
-          )
-        } else if (targetHeight && !targetWidth) {
-          // Height specified, calculate width maintaining aspect ratio
-          targetWidth = Math.round(
-            (currentWidth * targetHeight) / currentHeight
-          )
-        }
-
-        // Only resize if we're shrinking (not enlarging)
-        if (targetWidth <= currentWidth && targetHeight <= currentHeight) {
-          debugLog(`Resizing to ${targetWidth}x${targetHeight}`)
-          const resizeResult = this.lib.symbols.MagickResizeImage(
-            wand,
-            targetWidth,
-            targetHeight,
-            FilterType.LanczosFilter
-          )
-          if (!resizeResult) {
-            const error = this.getException(wand)
-            return {
-              success: false,
-              error: error ?? 'Failed to resize image',
-            }
-          }
-        } else {
-          debugLog(
-            'Skipping resize: target dimensions larger than current dimensions'
-          )
-        }
-      }
-
-      // Set output format - pass TypedArray directly
-      const formatCStr = toCString(format.toUpperCase())
-      const formatResult = this.lib.symbols.MagickSetImageFormat(
-        wand,
-        formatCStr
-      )
-      if (!formatResult) {
-        const error = this.getException(wand)
-        return {
-          success: false,
-          error: error ?? `Failed to set format to ${format}`,
-        }
-      }
-
-      // Write output image - pass TypedArray directly
+      // Write output image
       const outputCStr = toCString(outputPath)
       const writeResult = this.lib.symbols.MagickWriteImage(wand, outputCStr)
       if (!writeResult) {
         const error = this.getException(wand)
-        return {
-          success: false,
-          error: error ?? 'Failed to write output image',
-        }
+        return { success: false, error: error ?? 'Failed to write output image' }
       }
 
       debugLog('Conversion successful:', outputPath)
-      return {
-        success: true,
-        outputPath,
-      }
+      return { success: true, outputPath }
     } finally {
       this.destroyWand(wand)
     }
@@ -574,70 +562,16 @@ export class MagickFFI {
 
     const { inputPath, format, quality, resizeWidth, resizeHeight } = options
 
-    debugLog('Estimating file size:', {
-      inputPath,
-      format,
-      quality,
-      resizeWidth,
-      resizeHeight,
-    })
+    debugLog('Estimating file size:', { inputPath, format, quality, resizeWidth, resizeHeight })
 
     const wand = this.createWand()
     try {
-      const inputCStr = toCString(inputPath)
-
-      // Read input image
-      const readResult = this.lib.symbols.MagickReadImage(wand, inputCStr)
-      if (!readResult) {
-        const error = this.getException(wand)
-        return {
-          success: false,
-          error: error ?? 'Failed to read input image',
-        }
-      }
-
-      // Auto-orient based on EXIF data
-      this.lib.symbols.MagickAutoOrientImage(wand)
-
-      // Strip metadata
-      this.lib.symbols.MagickStripImage(wand)
-
-      // Set quality
-      this.lib.symbols.MagickSetImageCompressionQuality(wand, quality)
-
-      // Resize if specified
-      if (resizeWidth || resizeHeight) {
-        const currentWidth = Number(this.lib.symbols.MagickGetImageWidth(wand))
-        const currentHeight = Number(this.lib.symbols.MagickGetImageHeight(wand))
-
-        let targetWidth = resizeWidth ?? 0
-        let targetHeight = resizeHeight ?? 0
-
-        if (targetWidth && !targetHeight) {
-          targetHeight = Math.round((currentHeight * targetWidth) / currentWidth)
-        } else if (targetHeight && !targetWidth) {
-          targetWidth = Math.round((currentWidth * targetHeight) / currentHeight)
-        }
-
-        if (targetWidth <= currentWidth && targetHeight <= currentHeight) {
-          this.lib.symbols.MagickResizeImage(
-            wand,
-            targetWidth,
-            targetHeight,
-            FilterType.LanczosFilter
-          )
-        }
-      }
-
-      // Set output format
-      const formatCStr = toCString(format.toUpperCase())
-      const formatResult = this.lib.symbols.MagickSetImageFormat(wand, formatCStr)
-      if (!formatResult) {
-        const error = this.getException(wand)
-        return {
-          success: false,
-          error: error ?? `Failed to set format to ${format}`,
-        }
+      // Prepare image (read, orient, strip, quality, resize, format)
+      const prepResult = this.prepareImageForOutput(
+        wand, inputPath, format, quality, resizeWidth, resizeHeight
+      )
+      if (!prepResult.success) {
+        return { success: false, error: prepResult.error }
       }
 
       // Get the image as a blob (in memory, no disk write)
@@ -646,21 +580,17 @@ export class MagickFFI {
 
       if (!blobPtr) {
         const error = this.getException(wand)
-        return {
-          success: false,
-          error: error ?? 'Failed to get image blob',
-        }
+        return { success: false, error: error ?? 'Failed to get image blob' }
       }
 
       const estimatedSize = Number(lengthBuffer[0])
       debugLog('Estimated size:', estimatedSize, 'bytes')
 
-      // Free the blob memory
-      this.lib.symbols.MagickRelinquishMemory(blobPtr)
-
-      return {
-        success: true,
-        estimatedSize,
+      // Free the blob memory (in try-finally for safety)
+      try {
+        return { success: true, estimatedSize }
+      } finally {
+        this.lib.symbols.MagickRelinquishMemory(blobPtr)
       }
     } finally {
       this.destroyWand(wand)

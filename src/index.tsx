@@ -11,7 +11,7 @@ import { createSignal, createEffect, onMount, Show } from 'solid-js'
 import type { ImageFile, OutputFormat, Section, StatusMessage } from './utils/types'
 import { scanDirectory, loadDimensionsAsync, checkImageMagick, checkDiskSpace } from './utils/fileScanner'
 import { processImage, validateResize, estimateFileSizeForFormats, type FileSizeEstimate } from './utils/imageProcessor'
-import { COLORS, DEFAULT_QUALITY, OUTPUT_FORMATS, QUALITY_PRESETS } from './constants'
+import { COLORS, DEFAULT_QUALITY, OUTPUT_FORMATS, QUALITY_PRESETS, SIZE_ESTIMATE_DEBOUNCE_MS } from './constants'
 
 import { FileList, FormatSelector, QualitySelector, ResizeInput, SizeEstimate, StatusDisplay } from './components'
 
@@ -398,11 +398,15 @@ function App() {
           setSizeEstimates(null)
         }
       } catch (error) {
+        // Log error for debugging (visible with DEBUG=magick)
+        if (Bun.env.DEBUG?.includes('magick')) {
+          console.log('[SizeEstimate] Estimation failed:', error)
+        }
         setSizeEstimates(null)
       } finally {
         setEstimating(false)
       }
-    }, 300) // 300ms debounce
+    }, SIZE_ESTIMATE_DEBOUNCE_MS)
 
     // Cleanup on re-run
     return () => clearTimeout(timeoutId)
