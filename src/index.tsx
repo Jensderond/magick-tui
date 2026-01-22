@@ -10,7 +10,7 @@ import { createSignal, createEffect, onMount, Show } from 'solid-js'
 
 import type { ImageFile, OutputFormat, Section, StatusMessage } from './utils/types'
 import { scanDirectory, loadDimensionsAsync, checkImageMagick, checkDiskSpace } from './utils/fileScanner'
-import { processImage, validateResize, estimateFileSizeForFormats, type FileSizeEstimate } from './utils/imageProcessor'
+import { processImage, validateResize, estimateFileSizeAsync, cancelEstimation, type FileSizeEstimate } from './utils/imageProcessor'
 import { COLORS, DEFAULT_QUALITY, OUTPUT_FORMATS, QUALITY_PRESETS, SIZE_ESTIMATE_DEBOUNCE_MS } from './constants'
 
 import { FileList, FormatSelector, QualitySelector, ResizeInput, SizeEstimate, StatusDisplay } from './components'
@@ -361,6 +361,9 @@ function App() {
     if (idx >= 0) setQualityFocusIndex(idx)
   })
 
+  // Track current estimation request ID for cancellation
+  let currentEstimationId: number | null = null
+
   // Estimate file size when relevant parameters change
   createEffect(() => {
     const image = selectedImage()
@@ -369,9 +372,16 @@ function App() {
     const width = resizeWidth() ? parseInt(resizeWidth(), 10) : null
     const height = resizeHeight() ? parseInt(resizeHeight(), 10) : null
 
+    // Cancel any pending estimation when parameters change
+    if (currentEstimationId !== null) {
+      cancelEstimation(currentEstimationId)
+      currentEstimationId = null
+    }
+
     // Clear estimates if no image selected or no formats
     if (!image || formats.length === 0) {
       setSizeEstimates(null)
+      setEstimating(false)
       return
     }
 
@@ -381,35 +391,52 @@ function App() {
     }
 
     // Debounce the estimation to avoid too many calls
-    const timeoutId = setTimeout(async () => {
+    const timeoutId = setTimeout(() => {
       setEstimating(true)
-      try {
-        const result = await estimateFileSizeForFormats(
-          image.path,
-          image.size,
-          formats,
-          q,
-          width,
-          height
-        )
-        if (result.success && result.estimates) {
-          setSizeEstimates(result.estimates)
-        } else {
-          setSizeEstimates(null)
+
+      // Start async estimation in worker (non-blocking)
+      const { promise, id } = estimateFileSizeAsync(
+        image.path,
+        image.size,
+        formats,
+        q,
+        width,
+        height
+      )
+      currentEstimationId = id
+
+      promise.then((result) => {
+        // Only update if this is still the current request
+        if (currentEstimationId === id) {
+          if (result.success && result.estimates) {
+            setSizeEstimates(result.estimates)
+          } else {
+            setSizeEstimates(null)
+          }
+          setEstimating(false)
+          currentEstimationId = null
         }
-      } catch (error) {
+      }).catch((error) => {
         // Log error for debugging (visible with DEBUG=magick)
         if (Bun.env.DEBUG?.includes('magick')) {
           console.log('[SizeEstimate] Estimation failed:', error)
         }
-        setSizeEstimates(null)
-      } finally {
-        setEstimating(false)
-      }
+        if (currentEstimationId === id) {
+          setSizeEstimates(null)
+          setEstimating(false)
+          currentEstimationId = null
+        }
+      })
     }, SIZE_ESTIMATE_DEBOUNCE_MS)
 
     // Cleanup on re-run
-    return () => clearTimeout(timeoutId)
+    return () => {
+      clearTimeout(timeoutId)
+      if (currentEstimationId !== null) {
+        cancelEstimation(currentEstimationId)
+        currentEstimationId = null
+      }
+    }
   })
 
   return (

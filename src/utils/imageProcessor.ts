@@ -30,6 +30,79 @@ function debugLog(message: string, ...args: unknown[]): void {
   }
 }
 
+// Worker-based estimation for non-blocking UI
+let estimateWorker: Worker | null = null
+let requestId = 0
+const pendingRequests = new Map<number, {
+  resolve: (result: EstimateFileSizeResult) => void
+  reject: (error: Error) => void
+}>()
+
+function getEstimateWorker(): Worker {
+  if (!estimateWorker) {
+    estimateWorker = new Worker(new URL('./estimateWorker.ts', import.meta.url).href)
+    estimateWorker.onmessage = (event) => {
+      const { id, success, estimates, error } = event.data
+      const pending = pendingRequests.get(id)
+      if (pending) {
+        pendingRequests.delete(id)
+        if (success) {
+          pending.resolve({ success: true, estimates })
+        } else {
+          pending.resolve({ success: false, error })
+        }
+      }
+    }
+    estimateWorker.onerror = (error) => {
+      debugLog('Worker error:', error)
+    }
+  }
+  return estimateWorker
+}
+
+/**
+ * Estimate file sizes using a Web Worker (non-blocking)
+ * This runs the estimation in a separate thread to keep the UI responsive
+ */
+export function estimateFileSizeAsync(
+  inputPath: string,
+  originalSize: number,
+  formats: OutputFormat[],
+  quality: number,
+  resizeWidth: number | null,
+  resizeHeight: number | null
+): { promise: Promise<EstimateFileSizeResult>; id: number } {
+  const id = ++requestId
+  const worker = getEstimateWorker()
+
+  const promise = new Promise<EstimateFileSizeResult>((resolve, reject) => {
+    pendingRequests.set(id, { resolve, reject })
+    worker.postMessage({
+      id,
+      inputPath,
+      originalSize,
+      formats,
+      quality,
+      resizeWidth,
+      resizeHeight,
+    })
+  })
+
+  return { promise, id }
+}
+
+/**
+ * Cancel a pending estimation request
+ */
+export function cancelEstimation(id: number): void {
+  const pending = pendingRequests.get(id)
+  if (pending) {
+    pendingRequests.delete(id)
+    // Resolve with empty result instead of rejecting to avoid unhandled rejections
+    pending.resolve({ success: false, error: 'Cancelled' })
+  }
+}
+
 // Feature flag: default to true (FFI enabled), can be disabled with MAGICK_USE_FFI=false
 function useFFI(): boolean {
   return Bun.env.MAGICK_USE_FFI !== 'false'
