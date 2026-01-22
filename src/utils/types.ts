@@ -9,7 +9,7 @@ export interface ImageFile {
   format: string // file extension
 }
 
-export type OutputFormat = 'webp' | 'avif'
+export type OutputFormat = 'webp' | 'avif' | 'jxl'
 
 export interface QualityPreset {
   name: string

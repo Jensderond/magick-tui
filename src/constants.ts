@@ -17,6 +17,7 @@ export const SUPPORTED_INPUT_FORMATS = [
   '.png',
   '.webp',
   '.avif',
+  '.jxl',
   '.heic',
   '.heif',
   '.tiff',
@@ -28,6 +29,7 @@ export const SUPPORTED_INPUT_FORMATS = [
 export const OUTPUT_FORMATS: { format: OutputFormat; label: string }[] = [
   { format: 'webp', label: 'WebP' },
   { format: 'avif', label: 'AVIF' },
+  { format: 'jxl', label: 'JPEG XL' },
 ]
 
 // UI Colors
