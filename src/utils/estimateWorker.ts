@@ -4,10 +4,10 @@
  */
 
 import { getMagickFFI, isFFIAvailable } from './magickFFI'
-import { unlink } from 'node:fs/promises'
+import { estimateFileSizeWithTempFile, calculateDecreasePercent } from './magickShared'
 import type { OutputFormat } from './types'
 
-interface EstimateRequest {
+export interface EstimateRequest {
   id: number
   inputPath: string
   originalSize: number
@@ -17,7 +17,7 @@ interface EstimateRequest {
   resizeHeight: number | null
 }
 
-interface EstimateResponse {
+export interface EstimateResponse {
   id: number
   success: boolean
   estimates?: Array<{
@@ -30,129 +30,76 @@ interface EstimateResponse {
 }
 
 /**
- * Build ImageMagick arguments for shell estimation
+ * Estimate file size for a single format, using FFI with shell fallback
  */
-function buildMagickArgs(
-  inputPath: string,
-  outputPath: string,
-  quality: number,
-  resizeWidth: number | null,
-  resizeHeight: number | null
-): string[] {
-  const args: string[] = [inputPath]
-  args.push('-auto-orient')
-  args.push('-strip')
-  args.push('-quality', quality.toString())
-
-  if (resizeWidth !== null || resizeHeight !== null) {
-    const widthStr = resizeWidth !== null ? resizeWidth.toString() : ''
-    const heightStr = resizeHeight !== null ? resizeHeight.toString() : ''
-    args.push('-resize', `${widthStr}x${heightStr}>`)
-  }
-
-  args.push(outputPath)
-  return args
-}
-
-/**
- * Estimate file size using shell (with temp file)
- */
-async function estimateFileSizeShell(
+async function estimateForFormat(
   inputPath: string,
   format: OutputFormat,
   quality: number,
   resizeWidth: number | null,
-  resizeHeight: number | null
-): Promise<{ success: boolean; estimatedSize?: number; error?: string }> {
-  const tempPath = `/tmp/magick-estimate-${crypto.randomUUID()}.${format}`
-  const args = buildMagickArgs(inputPath, tempPath, quality, resizeWidth, resizeHeight)
-
-  try {
-    const proc = Bun.spawn(['magick', ...args], {
-      stdout: 'pipe',
-      stderr: 'pipe',
-    })
-
-    const stderr = await new Response(proc.stderr).text()
-    await proc.exited
-
-    if (proc.exitCode !== 0) {
-      return {
-        success: false,
-        error: stderr.trim() || `ImageMagick exited with code ${proc.exitCode}`,
-      }
-    }
-
-    const tempFile = Bun.file(tempPath)
-    const estimatedSize = tempFile.size
-
+  resizeHeight: number | null,
+  useFFI: boolean
+): Promise<number | undefined> {
+  // Try FFI first if enabled
+  if (useFFI && isFFIAvailable()) {
     try {
-      await unlink(tempPath)
-    } catch {
-      // Ignore cleanup errors
-    }
-
-    return { success: true, estimatedSize }
-  } catch (error) {
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : 'Unknown error occurred',
-    }
-  }
-}
-
-/**
- * Process estimation request
- */
-async function processEstimation(request: EstimateRequest): Promise<EstimateResponse> {
-  const { id, inputPath, originalSize, formats, quality, resizeWidth, resizeHeight } = request
-  const estimates: EstimateResponse['estimates'] = []
-
-  const useFFI = Bun.env.MAGICK_USE_FFI !== 'false'
-
-  for (const format of formats) {
-    let estimatedSize: number | undefined
-
-    if (useFFI && isFFIAvailable()) {
-      try {
-        const magick = getMagickFFI()
-        const result = magick.estimateFileSize({
-          inputPath,
-          format,
-          quality,
-          resizeWidth,
-          resizeHeight,
-        })
-
-        if (result.success && result.estimatedSize !== undefined) {
-          estimatedSize = result.estimatedSize
-        }
-      } catch {
-        // Fall through to shell
-      }
-    }
-
-    // Fallback to shell if FFI didn't work
-    if (estimatedSize === undefined) {
-      const shellResult = await estimateFileSizeShell(
+      const magick = getMagickFFI()
+      const result = magick.estimateFileSize({
         inputPath,
         format,
         quality,
         resizeWidth,
-        resizeHeight
-      )
-      if (shellResult.success && shellResult.estimatedSize !== undefined) {
-        estimatedSize = shellResult.estimatedSize
+        resizeHeight,
+      })
+
+      if (result.success && result.estimatedSize !== undefined) {
+        return result.estimatedSize
       }
+    } catch {
+      // Fall through to shell
     }
+  }
+
+  // Fallback to shell
+  const shellResult = await estimateFileSizeWithTempFile(
+    inputPath,
+    format,
+    quality,
+    resizeWidth,
+    resizeHeight
+  )
+
+  if (shellResult.success && shellResult.estimatedSize !== undefined) {
+    return shellResult.estimatedSize
+  }
+
+  return undefined
+}
+
+/**
+ * Process estimation request for all formats
+ */
+async function processEstimation(request: EstimateRequest): Promise<EstimateResponse> {
+  const { id, inputPath, originalSize, formats, quality, resizeWidth, resizeHeight } = request
+  const useFFI = Bun.env.MAGICK_USE_FFI !== 'false'
+  const estimates: EstimateResponse['estimates'] = []
+
+  for (const format of formats) {
+    const estimatedSize = await estimateForFormat(
+      inputPath,
+      format,
+      quality,
+      resizeWidth,
+      resizeHeight,
+      useFFI
+    )
 
     if (estimatedSize !== undefined) {
-      const decreasePercent = Math.round(((originalSize - estimatedSize) / originalSize) * 100)
       estimates.push({
         format,
         estimatedSize,
         originalSize,
-        decreasePercent,
+        decreasePercent: calculateDecreasePercent(originalSize, estimatedSize),
       })
     }
   }
