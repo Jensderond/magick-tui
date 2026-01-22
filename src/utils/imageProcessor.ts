@@ -4,6 +4,22 @@ import type { ProcessOptions, ProcessResult, OutputFormat } from './types'
 import { generateOutputPath, getImageDimensions } from './fileScanner'
 import { getMagickFFI, isFFIAvailable } from './magickFFI'
 
+/**
+ * Result of file size estimation for multiple formats
+ */
+export interface FileSizeEstimate {
+  format: OutputFormat
+  estimatedSize: number
+  originalSize: number
+  decreasePercent: number
+}
+
+export interface EstimateFileSizeResult {
+  success: boolean
+  estimates?: FileSizeEstimate[]
+  error?: string
+}
+
 // Debug logging
 const DEBUG = Bun.env.DEBUG?.includes('magick') ?? false
 
@@ -268,4 +284,125 @@ export function describeProcessing(options: ProcessOptions): string {
   parts.push(`Formats: ${options.outputFormats.map((f) => f.toUpperCase()).join(', ')}`)
 
   return parts.join(' | ')
+}
+
+/**
+ * Estimate file size using shell (with temp file)
+ * Used as fallback when FFI is not available
+ */
+async function estimateFileSizeShell(
+  inputPath: string,
+  format: OutputFormat,
+  quality: number,
+  resizeWidth: number | null,
+  resizeHeight: number | null
+): Promise<{ success: boolean; estimatedSize?: number; error?: string }> {
+  const tempPath = `/tmp/magick-estimate-${Date.now()}.${format}`
+  const args = buildMagickArgs(inputPath, tempPath, quality, resizeWidth, resizeHeight)
+
+  try {
+    const proc = Bun.spawn(['magick', ...args], {
+      stdout: 'pipe',
+      stderr: 'pipe',
+    })
+
+    const stderr = await new Response(proc.stderr).text()
+    await proc.exited
+
+    if (proc.exitCode !== 0) {
+      return {
+        success: false,
+        error: stderr.trim() || `ImageMagick exited with code ${proc.exitCode}`,
+      }
+    }
+
+    // Get the size of the temp file
+    const tempFile = Bun.file(tempPath)
+    const estimatedSize = tempFile.size
+
+    // Delete the temp file
+    try {
+      await Bun.write(tempPath, '') // Clear content first
+      const fs = await import('node:fs/promises')
+      await fs.unlink(tempPath)
+    } catch {
+      // Ignore cleanup errors
+    }
+
+    return { success: true, estimatedSize }
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error occurred',
+    }
+  }
+}
+
+/**
+ * Estimate the output file sizes for given formats without saving files
+ * Uses FFI for in-memory conversion when available, falls back to temp files
+ */
+export async function estimateFileSizeForFormats(
+  inputPath: string,
+  originalSize: number,
+  formats: OutputFormat[],
+  quality: number,
+  resizeWidth: number | null,
+  resizeHeight: number | null
+): Promise<EstimateFileSizeResult> {
+  const estimates: FileSizeEstimate[] = []
+  const shouldUseFFI = useFFI()
+
+  for (const format of formats) {
+    let estimatedSize: number | undefined
+
+    if (shouldUseFFI && isFFIAvailable()) {
+      try {
+        const magick = getMagickFFI()
+        const result = magick.estimateFileSize({
+          inputPath,
+          format,
+          quality,
+          resizeWidth,
+          resizeHeight,
+        })
+
+        if (result.success && result.estimatedSize !== undefined) {
+          estimatedSize = result.estimatedSize
+        }
+      } catch (error) {
+        debugLog('FFI estimation failed, falling back to shell:', error)
+      }
+    }
+
+    // Fallback to shell if FFI didn't work
+    if (estimatedSize === undefined) {
+      const shellResult = await estimateFileSizeShell(
+        inputPath,
+        format,
+        quality,
+        resizeWidth,
+        resizeHeight
+      )
+      if (shellResult.success && shellResult.estimatedSize !== undefined) {
+        estimatedSize = shellResult.estimatedSize
+      }
+    }
+
+    if (estimatedSize !== undefined) {
+      const decreasePercent = Math.round(((originalSize - estimatedSize) / originalSize) * 100)
+      estimates.push({
+        format,
+        estimatedSize,
+        originalSize,
+        decreasePercent,
+      })
+    }
+  }
+
+  if (estimates.length === 0) {
+    return { success: false, error: 'Could not estimate file sizes' }
+  }
+
+  return { success: true, estimates }
 }
